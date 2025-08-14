@@ -1,0 +1,85 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, to_date, month, year, sum as _sum, count, when
+
+# ---------------------------
+# 1. Create Spark session
+# ---------------------------
+spark = SparkSession.builder \
+    .appName("Orders_Returns_Pipeline") \
+    .getOrCreate()
+
+# ---------------------------
+# 2. Read datasets
+# ---------------------------
+orders_df = spark.read.option("header", "true").csv("orders.csv")
+returns_df = spark.read.option("header", "true").csv("returns.csv")
+
+# ---------------------------
+# 3. Convert date columns to DateType
+# ---------------------------
+orders_df = orders_df.withColumn("order_date", to_date(col("order_date"), "yyyy-MM-dd")) \
+                     .withColumn("amount", col("amount").cast("double"))
+
+returns_df = returns_df.withColumn("return_date", to_date(col("return_date"), "yyyy-MM-dd"))
+
+# ---------------------------
+# 4. Filter for Jan & Feb 2024 orders
+# ---------------------------
+filtered_orders = orders_df.filter(
+    (year(col("order_date")) == 2024) &
+    (month(col("order_date")).isin(1, 2))
+)
+
+# ---------------------------
+# 5. Aggregate total spend & total orders per customer
+# ---------------------------
+customer_orders = filtered_orders.groupBy("customer_id") \
+    .agg(
+        _sum("amount").alias("total_spent"),
+        count("order_id").alias("total_orders")
+    )
+
+# ---------------------------
+# 6. Join orders with returns
+# ---------------------------
+orders_with_returns = filtered_orders.join(
+    returns_df,
+    on="order_id",
+    how="left"
+)
+
+# ---------------------------
+# 7. Count number of returns per customer
+# ---------------------------
+customer_returns = orders_with_returns.groupBy("customer_id") \
+    .agg(
+        count(when(col("return_id").isNotNull(), True)).alias("returned_orders")
+    )
+
+# ---------------------------
+# 8. Join customer_orders with customer_returns
+# ---------------------------
+final_df = customer_orders.join(
+    customer_returns,
+    on="customer_id",
+    how="left"
+).fillna(0, subset=["returned_orders"])
+
+# ---------------------------
+# 9. Calculate return percentage
+# ---------------------------
+final_df = final_df.withColumn(
+    "return_percentage",
+    (col("returned_orders") / col("total_orders")) * 100
+)
+
+# ---------------------------
+# 10. Sort by highest return %
+# ---------------------------
+final_df = final_df.orderBy(col("return_percentage").desc())
+
+# ---------------------------
+# 11. Show result
+# ---------------------------
+final_df.show()
+
