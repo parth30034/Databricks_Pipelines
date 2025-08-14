@@ -1,0 +1,25 @@
+Task
+
+Write a PySpark pipeline that:
+
+Reads both datasets.
+
+Filters orders from January & February 2024 only.
+
+Calculates total spend per customer for these months.
+
+Joins with returns to find % of orders returned per customer.
+
+Sorts the result by highest return %.
+
+Hints for Step-by-Step
+
+Step 1: Read CSVs → spark.read.option("header", "true").csv(path)
+
+Step 2: Convert order_date to date → to_date(col("order_date"))
+
+Step 3: Filter months using month() & year()
+
+Step 4: Aggregate using groupBy().agg(sum(), count())
+
+Step 5: Left join with returns & calculate percentage
